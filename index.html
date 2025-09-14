@@ -1,0 +1,216 @@
+<!doctype html>
+<html>
+<head>
+  <title>The Poetry DB Client - Front-End Code Challenge</title>
+
+  <!-- jQuery (Required for Kendo UI) -->
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+
+    <!-- Kendo UI all-in-one JS bundle -->
+    <script src="https://kendo.cdn.telerik.com/2025.3.825/js/kendo.all.min.js"></script>
+    <script src="./telerik-license.js"></script>
+
+    <!-- Kendo UI Theme CSS -->
+  <link rel="stylesheet" href="https://kendo.cdn.telerik.com/themes/12.0.0/default/default-main.css">
+
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 24px; }
+    form { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; margin-bottom: 12px; }
+    input, button { padding: 8px; }
+    .error { color: #b00020; white-space: pre-wrap; }
+    details { margin: 4px 0; }
+    ul { padding-left: 20px; }
+    .muted { color: #666; }
+
+    .dialog-form {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 10px;
+    }
+    label {
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <h1 id="page-title"></h1>
+  <button id="openDialogBtn">Open Search Dialog</button>
+  <ul id="titleList"></ul>
+
+<!-- Dialog Content -->
+  <div id="poetryDialog">
+    <div class="dialog-form">
+      <div>
+        <label for="authorInput">Author:</label>
+        <input id="authorInput" />
+      </div>
+      <div>
+        <label for="titleInput">Title:</label>
+        <input id="titleInput" />
+      </div>
+    </div>
+  </div>
+<script>
+  $(function () { 
+    // put the title of the page... on the page as content 
+  $('#page-title').text(document.title); 
+
+  /* Initialize Kendo DropDownLists */ 
+  // Author dropdown
+  const authorDD = $("#authorInput").kendoDropDownList({
+    optionLabel: "Select an author...",
+    dataTextField: "text",
+    dataValueField: "value",
+    filter: "contains",
+    dataSource: new kendo.data.DataSource({
+      transport: {
+        read: function (options) {
+          // Call your async function
+          getAuthors()
+            .then(data => {
+              // data = { authors: ["A", "B", "C"] }
+              const mapped = data[0].authors.map(name => ({ text: name, value: name }));
+              options.success(mapped);
+            })
+            .catch(err => {
+              console.error(err);
+              options.error(err);
+            });
+        }
+      }
+    })
+  }).data("kendoDropDownList");
+
+    // --- Title dropdown (cascades from selected author) ---
+    const titleDD = $("#titleInput").kendoDropDownList({
+        optionLabel: "Select a title...",
+        dataTextField: "text",
+        dataValueField: "value",
+        filter: "contains",
+        autoBind: false,       // don't load until an author is chosen
+        enable: false,         // disabled until we have an author
+        dataSource: new kendo.data.DataSource({
+        transport: {
+            read: function (options) {
+            const author = authorDD.value();
+            if (!author) {
+                options.success([]);
+                return;
+            }
+            getTitlesByAuthor(author)
+                .then(data => {
+                // data = [{"title": "The titel"}, {"title": "The titel"},...]
+                let titles = [];
+                if (Array.isArray(data)) {
+                    if (data[0][0]?.title) titles = data[0].map(x => x.title);
+                } 
+                const mapped = titles.map(t => ({ text: t, value: t }));
+                options.success(mapped);
+                })
+                .catch(err => {
+                    console.error(err);
+                    options.success([]); // fail soft
+                });
+            }
+        }
+        })
+    }).data("kendoDropDownList");
+
+    // When author changes, clear & reload titles
+    authorDD.bind("change", function () {
+        titleDD.value("");            // clear previous selection/text
+        // disable search b/c titleDD cleared  
+        $('.k-button.k-button-md.k-rounded-md.k-button-solid.k-button-solid-primary').addClass('k-disabled');
+        if (!authorDD.value()) {
+            titleDD.enable(false);
+            titleDD.dataSource.data([]);
+            return;
+        }
+            titleDD.enable(true);
+            titleDD.dataSource.read();    // fetch titles for selected author
+    });
+
+    titleDD.bind("change", function(){
+        if (!titleDD.value()) {
+            // disable search 
+            $('.k-button.k-button-md.k-rounded-md.k-button-solid.k-button-solid-primary').addClass('k-disabled');
+            return;
+        }
+            // enable search 
+            $('.k-button.k-button-md.k-rounded-md.k-button-solid.k-button-solid-primary').removeClass('k-disabled');
+    });
+
+    const titleList  = document.getElementById('titleList');
+
+    // Dialog
+    const poetryDialog = $("#poetryDialog").kendoDialog({
+        width: "400px",
+        title: "Search Poetry",
+        closable: true,
+        modal: true,
+        visible: false,
+        actions: [
+        { text: "Cancel" },
+        { text: "Search",
+            primary: true,
+            action: function () {
+            const title = $("#titleInput").val();
+            const author = authorDD.value(); 
+            getLyricsByAuthorAndTitle(author, title)
+            .then(data => {
+                data[0].forEach(p => {
+                    titleList.innerHTML = '';
+                    const li = document.createElement('li');
+                    const details = document.createElement('details');
+                    const sum = document.createElement('summary');
+                    sum.textContent = `${p.title} — ${p.author}`;
+                    const pre = document.createElement('pre');
+                    pre.textContent = (p.lines || []).join('\n');
+                    details.appendChild(sum);
+                    details.appendChild(pre);
+                    li.appendChild(details);
+                    titleList.appendChild(li);
+                });
+            })
+            .catch(err => {
+                console.error(err);
+            });
+            return true;
+            }
+        }
+        ],
+        open: function () {
+            // disable Search by default on every open 
+            $('.k-button.k-button-md.k-rounded-md.k-button-solid.k-button-solid-primary').addClass('k-disabled');
+        }
+    }).data("kendoDialog");
+    $("#openDialogBtn").on("click", () => poetryDialog.open());
+    });
+
+    const BASE = 'https://poetrydb.org';
+
+    async function getRequestJsonIfOkay(res) {
+        if (!res.ok) {
+            throw new Error(`200 Status NOT returned from the server: ${res.status} ${res.statusText}`);
+        }
+        return await Promise.all([ res.json() ]);
+    }
+
+    async function getAuthors() {
+        const res = await fetch(`${BASE}/author`, { method: 'GET' });
+        return getRequestJsonIfOkay(res);
+    }
+
+    async function getTitlesByAuthor(author) {
+        const res = await fetch(`${BASE}/author/${encodeURIComponent(author)}/title`, { method: 'GET' });
+        return getRequestJsonIfOkay(res);
+    }
+
+    async function getLyricsByAuthorAndTitle(author, title) {
+        const res = await fetch(`${BASE}/author,title/${encodeURIComponent(author)};${encodeURIComponent(title)}`);
+        return getRequestJsonIfOkay(res);
+    }
+</script>
+</body>
+</html>
