@@ -199,17 +199,17 @@
 
     async function getAuthors() {
         const res = await fetch(`${BASE}/author`, { method: 'GET' });
-        return getRequestJsonIfOkay(res);
+        return await getRequestJsonIfOkay(res);
     }
 
     async function getTitlesByAuthor(author) {
         const res = await fetch(`${BASE}/author/${encodeURIComponent(author)}/title`, { method: 'GET' });
-        return getRequestJsonIfOkay(res);
+        return await getRequestJsonIfOkay(res);
     }
 
     async function getLyricsByAuthorAndTitle(author, title) {
         const res = await fetch(`${BASE}/author,title/${encodeURIComponent(author)};${encodeURIComponent(title)}`);
-        return getRequestJsonIfOkay(res);
+        return await getRequestJsonIfOkay(res);
     }
 </script>
 </body>
